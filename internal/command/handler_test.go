@@ -164,6 +164,23 @@ func TestExecute_HelpAction(t *testing.T) {
 	}
 }
 
+func TestNativeCommands_StableOrder(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler(nil)
+	got := h.GetRegisteredCommands()
+	for _, group := range []string{
+		"schedule", "mcp", "settings",
+		"model", "memory", "search", "browser", "usage",
+		"email", "heartbeat", "skill", "fs", "access",
+	} {
+		_, ok := got[group]
+		if !ok {
+			t.Errorf("missing /%s in registered commands", group)
+		}
+	}
+}
+
 func TestExecute_UnknownCommand(t *testing.T) {
 	t.Parallel()
 	h := newTestHandler(&fakeRoleResolver{role: "owner"})

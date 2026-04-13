@@ -155,6 +155,29 @@ func (h *Handler) IsCommand(text string) bool {
 	return ok
 }
 
+// GetRegisteredCommands exports the canonical top-level command snapshot used for
+// persistence and platform-native command registration.
+func (h *Handler) GetRegisteredCommands() map[string]string {
+	items := make(map[string]string)
+	if h == nil {
+		return items
+	}
+	for name, description := range topLevelCommands {
+		items[name] = description
+	}
+	if h.registry == nil {
+		return items
+	}
+	for _, name := range h.registry.order {
+		group := h.registry.groups[name]
+		if group == nil {
+			continue
+		}
+		items[group.Name] = group.Description
+	}
+	return items
+}
+
 // Execute parses and runs a slash command, returning the text reply.
 func (h *Handler) Execute(ctx context.Context, botID, channelIdentityID, text string) (string, error) {
 	return h.ExecuteWithInput(ctx, ExecuteInput{

@@ -274,6 +274,50 @@ func provideChatResolver(log *slog.Logger, a *agentpkg.Agent, modelsService *mod
 	return resolver
 }
 
+func provideCommandHandler(
+	log *slog.Logger,
+	botService *bots.Service,
+	settingsService *settings.Service,
+	aclService *acl.Service,
+	scheduleService *schedule.Service,
+	mcpConnService *mcp.ConnectionService,
+	modelsService *models.Service,
+	providersService *providers.Service,
+	memProvService *memprovider.Service,
+	searchProvService *searchproviders.Service,
+	browserCtxService *browsercontexts.Service,
+	emailService *emailpkg.Service,
+	emailOutboxService *emailpkg.OutboxService,
+	heartbeatService *heartbeat.Service,
+	queries *dbsqlc.Queries,
+	containerdHandler *handlers.ContainerdHandler,
+	manager *workspace.Manager,
+) *command.Handler {
+	return command.NewHandler(
+		log,
+		&command.BotMemberRoleAdapter{BotService: botService},
+		scheduleService,
+		settingsService,
+		mcpConnService,
+		modelsService,
+		providersService,
+		memProvService,
+		searchProvService,
+		browserCtxService,
+		emailService,
+		emailOutboxService,
+		heartbeatService,
+		queries,
+		aclService,
+		&commandSkillLoaderAdapter{handler: containerdHandler},
+		&commandContainerFSAdapter{manager: manager},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// channel providers
+// ---------------------------------------------------------------------------
+
 func provideChannelRegistry(log *slog.Logger, hub *local.RouteHub, mediaService *media.Service) *channel.Registry {
 	registry := channel.NewRegistry()
 
@@ -320,30 +364,17 @@ func provideChannelRouter(
 	msgService *message.DBService,
 	resolver *flow.Resolver,
 	identityService *identities.Service,
-	botService *bots.Service,
 	aclService *acl.Service,
 	policyService *policy.Service,
 	bindService *bind.Service,
 	mediaService *media.Service,
 	ttsService *ttspkg.Service,
 	settingsService *settings.Service,
-	scheduleService *schedule.Service,
-	mcpConnService *mcp.ConnectionService,
-	modelsService *models.Service,
-	providersService *providers.Service,
-	memProvService *memprovider.Service,
-	searchProvService *searchproviders.Service,
-	browserCtxService *browsercontexts.Service,
-	emailService *emailpkg.Service,
-	emailOutboxService *emailpkg.OutboxService,
-	heartbeatService *heartbeat.Service,
-	queries *dbsqlc.Queries,
-	containerdHandler *handlers.ContainerdHandler,
-	manager *workspace.Manager,
 	pipeline *pipelinepkg.Pipeline,
 	eventStore *pipelinepkg.EventStore,
 	discussDriver *pipelinepkg.DiscussDriver,
 	rc *boot.RuntimeConfig,
+	commandHandler *command.Handler,
 ) *inbound.ChannelInboundProcessor {
 	adapter, ok := registry.Get(qq.Type)
 	if !ok {
@@ -366,25 +397,18 @@ func provideChannelRouter(
 	processor.SetStreamObserver(local.NewRouteHubBroadcaster(hub))
 	processor.SetDispatcher(inbound.NewRouteDispatcher(log))
 	processor.SetTtsService(ttsService, &settingsTtsModelResolver{settings: settingsService})
-	processor.SetCommandHandler(command.NewHandler(
-		log,
-		&command.BotMemberRoleAdapter{BotService: botService},
-		scheduleService,
-		settingsService,
-		mcpConnService,
-		modelsService,
-		providersService,
-		memProvService,
-		searchProvService,
-		browserCtxService,
-		emailService,
-		emailOutboxService,
-		heartbeatService,
-		queries,
-		aclService,
-		&commandSkillLoaderAdapter{handler: containerdHandler},
-		&commandContainerFSAdapter{manager: manager},
-	))
+	processor.SetCommandHandler(commandHandler)
+
+	adapter, ok = registry.Get(telegram.Type)
+	if !ok {
+		panic("telegram adapter not registered")
+	}
+	tgAdapter, ok := adapter.(*telegram.TelegramAdapter)
+	if !ok {
+		panic("telegram adapter has unexpected type")
+	}
+	tgAdapter.SetCommandsProvider(processor)
+
 	return processor
 }
 
@@ -406,6 +430,10 @@ func provideChannelManager(log *slog.Logger, registry *channel.Registry, channel
 func provideChannelLifecycleService(channelStore *channel.Store, channelManager *channel.Manager) *channel.Lifecycle {
 	return channel.NewLifecycle(channelStore, channelManager)
 }
+
+// ---------------------------------------------------------------------------
+// containerd handler & tool gateway
+// ---------------------------------------------------------------------------
 
 func provideContainerdHandler(log *slog.Logger, manager *workspace.Manager, cfg config.Config, rc *boot.RuntimeConfig, botService *bots.Service, accountService *accounts.Service, policyService *policy.Service) *handlers.ContainerdHandler {
 	return handlers.NewContainerdHandler(log, manager, cfg.Workspace, rc.ContainerBackend, botService, accountService, policyService)
@@ -464,6 +492,10 @@ func provideToolProviders(log *slog.Logger, cfg config.Config, channelManager *c
 		agenttools.NewHistoryProvider(log, sessionService, queries),
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handler providers (interface adaptation / config extraction)
+// ---------------------------------------------------------------------------
 
 func provideMemoryHandler(log *slog.Logger, botService *bots.Service, accountService *accounts.Service, _ config.Config, manager *workspace.Manager, memoryRegistry *memprovider.Registry, settingsService *settings.Service, _ *handlers.ContainerdHandler) *handlers.MemoryHandler {
 	h := handlers.NewMemoryHandler(log, botService, accountService)

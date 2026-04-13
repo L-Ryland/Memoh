@@ -64,6 +64,7 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 mise.local.toml
+.vscode/mise-tools
 
 # IDE
 .idea/
@@ -103,6 +104,7 @@ dump.rdb
 memory.db
 
 config.toml
+config.local.toml
 
 .workdocs/
 data

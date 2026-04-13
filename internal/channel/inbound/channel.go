@@ -215,6 +215,10 @@ func (p *ChannelInboundProcessor) SetCommandHandler(handler *command.Handler) {
 	p.commandHandler = handler
 }
 
+func (p *ChannelInboundProcessor) GetCommands() map[string]string {
+	return p.commandHandler.GetRegisteredCommands()
+}
+
 // SetPipeline configures the DCP pipeline, event store, and discuss driver.
 func (p *ChannelInboundProcessor) SetPipeline(pipeline *pipelinepkg.Pipeline, store *pipelinepkg.EventStore, driver *pipelinepkg.DiscussDriver) {
 	if p == nil {

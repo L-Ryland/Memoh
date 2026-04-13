@@ -45,6 +45,10 @@ type assetOpener interface {
 	Open(ctx context.Context, botID, contentHash string) (io.ReadCloser, media.Asset, error)
 }
 
+type WithCommandsProvider interface {
+	GetCommands() map[string]string
+}
+
 // TelegramAdapter implements the channel.Adapter, channel.Sender, and channel.Receiver interfaces for Telegram.
 type TelegramAdapter struct {
 	logger        *slog.Logger
@@ -55,6 +59,7 @@ type TelegramAdapter struct {
 	streamLimiter *rate.Limiter // global rate limiter for all streaming API calls
 	seenUpdatesMu sync.Mutex
 	seenUpdates   map[string]time.Time
+	getCommands   func() []tgbotapi.BotCommand
 }
 
 // NewTelegramAdapter creates a TelegramAdapter with the given logger.
@@ -129,6 +134,17 @@ func (a *TelegramAdapter) getOrCreateBot(cfg Config, configID string) (*tgbotapi
 		}
 		return nil, err
 	}
+
+	commands := a.getCommands()
+	config := tgbotapi.NewSetMyCommands(commands...)
+	_, err = bot.Request(config)
+	if err != nil {
+		if a.logger != nil {
+			a.logger.Error("create bot failed", slog.String("config_id", configID), slog.Any("error", err))
+		}
+		return nil, err
+	}
+
 	a.bots[cacheKey] = bot
 	a.fileEndpoints[bot] = cfg.fileEndpoint()
 	return bot, nil
@@ -1615,4 +1631,18 @@ func (a *TelegramAdapter) Unreact(_ context.Context, cfg channel.ChannelConfig, 
 		return err
 	}
 	return clearTelegramReaction(bot, target, messageID)
+}
+
+func (a *TelegramAdapter) SetCommandsProvider(commandProvider WithCommandsProvider) {
+	a.getCommands = func() []tgbotapi.BotCommand {
+		rawCommands := commandProvider.GetCommands()
+		botCommands := []tgbotapi.BotCommand{}
+		for command, description := range rawCommands {
+			botCommands = append(botCommands, tgbotapi.BotCommand{
+				Command:     command,
+				Description: description,
+			})
+		}
+		return botCommands
+	}
 }
